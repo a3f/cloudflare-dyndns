@@ -14,7 +14,13 @@ def main():
     record = flask.request.args.get('record')
     ipv4 = flask.request.args.get('ipv4')
     ipv6 = flask.request.args.get('ipv6')
-    cf = CloudFlare.CloudFlare(token=token)
+
+    if not token:
+        try:
+            with open('/run/secrets/token') as f:
+                token = f.read()
+        except FileNotFoundError:
+            pass
 
     if not token:
         return flask.jsonify({'status': 'error', 'message': 'Missing token URL parameter.'}), 400
@@ -23,6 +29,7 @@ def main():
     if not ipv4 and not ipv6:
         return flask.jsonify({'status': 'error', 'message': 'Missing ipv4 or ipv6 URL parameter.'}), 400
 
+    cf = CloudFlare.CloudFlare(token=token)
     try:
         zones = cf.zones.get(params={'name': zone})
 
