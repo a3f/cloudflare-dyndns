@@ -4,6 +4,7 @@ import waitress
 from flask import Flask, request, jsonify
 import socket
 import requests
+import time
 
 
 app = Flask(__name__)
@@ -124,6 +125,13 @@ def healthz():
         response['ipv6'] = ipv6
 
     return jsonify(response), 200
+
+@app.after_request
+def after_request(response):
+    if not request.full_path.startswith("/healthz"):
+        timestamp = time.strftime('[%Y-%b-%d %H:%M]')
+        print(f'{timestamp} {request.remote_addr} {request.method} {request.scheme} {request.full_path} {response.status}')
+    return response
 
 app.secret_key = os.urandom(24)
 waitress.serve(app, host='0.0.0.0', port=80)
