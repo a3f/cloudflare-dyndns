@@ -10,3 +10,5 @@ COPY app.py ./
 CMD [ "python", "./app.py" ]
 
 EXPOSE 80
+
+HEALTHCHECK CMD python -c "import requests; requests.get('http://localhost:80/healthz')"
