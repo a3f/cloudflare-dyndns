@@ -2,6 +2,8 @@ import os
 import CloudFlare
 import waitress
 import flask
+import socket
+import requests
 
 
 app = flask.Flask(__name__)
@@ -61,11 +63,67 @@ def main():
 
     return flask.jsonify({'status': 'success', 'message': 'Update successful.'}), 200
 
+def inconsistent_ip(host, actual, expect):
+    return flask.jsonify({'status': 'error',
+                          'host': host,
+                          'message': 'inconsistent IP addresses',
+                          'addrs': { "actual": actual, "expect": expect }}), 500
 
 @app.route('/healthz', methods=['GET'])
 def healthz():
-    return flask.jsonify({'status': 'success', 'message': 'OK'}), 200
+    ipv4 = flask.request.args.get('ipv4')
+    ipv6 = flask.request.args.get('ipv6')
 
+    if ipv4 is None and ipv6 is None:
+        return flask.jsonify({'status': 'success', 'message': 'OK'}), 200
+
+    zone = flask.request.args.get('zone')
+    record = flask.request.args.get('record')
+
+    if not zone:
+        return flask.jsonify({'status': 'error', 'message': 'Missing zone URL parameter.'}), 400
+
+    record_zone_concat = '{}.{}'.format(record, zone) if record is not None else zone
+
+
+    if ipv4 == "":
+        ipv4 = requests.get('https://api.ipify.org/').text
+    if ipv6 == "":
+        ipv6 = requests.get('https://api6.ipify.org/').text
+
+    try:
+        data = socket.getaddrinfo(record_zone_concat, None)
+    except socket.gaierror as e:
+        return flask.jsonify({'status': 'error', 'message': e.args[1]}), 500
+
+    got_ipv4 = got_ipv6 = False
+
+    for addr in data:
+        (family, typ, proto, canonname, sockaddr) = addr
+        if family == socket.AF_INET:
+            actual = ipv4
+            got_ipv4 = True
+        elif family == socket.AF_INET6:
+            actual = ipv6
+            got_ipv6 = True
+        else:
+            continue
+
+        if actual and sockaddr[0] != actual:
+            return inconsistent_ip(record_zone_concat, actual, sockaddr[0])
+
+    if ipv4 and not got_ipv4:
+        return inconsistent_ip(record_zone_concat, ipv4, None)
+    if ipv6 and not got_ipv6:
+        return inconsistent_ip(record_zone_concat, ipv6, None)
+
+    response = {'status': 'success', 'message': 'OK'}
+    if ipv4:
+        response['ipv4'] = ipv4
+    if ipv6:
+        response['ipv6'] = ipv6
+
+    return flask.jsonify(response), 200
 
 app.secret_key = os.urandom(24)
 waitress.serve(app, host='0.0.0.0', port=80)
